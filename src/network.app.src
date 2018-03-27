@@ -1,0 +1,12 @@
+{application, network,
+    [
+        {description, ""},
+        {vsn, "1"},
+        {registered, []},
+        {applications, [
+            kernel,
+            stdlib
+        ]},
+        {mod, {network_app, []}},
+        {env, []}
+    ]}.
