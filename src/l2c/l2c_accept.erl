@@ -29,7 +29,7 @@ loop(LSocet, CallBack, Proto) ->
                 end,
             gen_tcp:controlling_process(Socket, Pid);
         {error, _Reason} ->
-            ?PRINT("accept error:~p~n", [{error, _Reason}])
+            ?INFO("accept error:~p~n", [{error, _Reason}])
     end,
 %%    flush(),
     ?MODULE:loop(LSocet, CallBack, Proto).

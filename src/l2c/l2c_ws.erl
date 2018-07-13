@@ -42,12 +42,12 @@ handle_cast(Msg, State) ->
 
 %% 恶意连接,发大数据,具体最大数据还要测试,暂定40000,(5000　* 8)
 handle_info({tcp, _Socket, RecvBin}, State) when bit_size(RecvBin) > 40000 ->
-    ?PRINT("tcp big data~n"),
+    ?INFO("tcp big data~n"),
     {stop, {tcp, max_bit}, State};
 
 %% 收到tcp数据,握手
 handle_info({tcp, Socket, RecvBin}, State) ->
-%%    ?PRINT("ws handle_info:~p~n", [[self(), Socket, RecvBin, State]]),
+%%    ?INFO("ws handle_info:~p~n", [[self(), Socket, RecvBin, State]]),
     CSocket = ?get(?c_socket),
     Ret =
         if
@@ -75,28 +75,28 @@ handle_info({tcp, Socket, RecvBin}, State) ->
                 {noreply, State}
         end,
     inet:setopts(CSocket, [{active, once}]),
-%%    ?PRINT("ws handle_info:~p~n", [[self(), RecvBin, Ret, State]]),
+%%    ?INFO("ws handle_info:~p~n", [[self(), RecvBin, Ret, State]]),
     Ret;
 
 
 %% 用户正常下线,返回stop即可,析构函数在terminate()中
 handle_info({tcp_closed, _Socket}, State) ->
-%%    ?PRINT("ws tcp_closed:~p~n", [[self(), _Socket, State]]),
+%%    ?INFO("ws tcp_closed:~p~n", [[self(), _Socket, State]]),
     {stop, normal, State};
 
 handle_info({tcp_passive, _Socket}, State) ->
-%%    ?PRINT("tcp tcp_passive:~p~n", [[self(), erlang:get(?c_socket), _Socket, State]]),
+%%    ?INFO("tcp tcp_passive:~p~n", [[self(), erlang:get(?c_socket), _Socket, State]]),
     {stop, normal, State};
 
 handle_info({tcp_error, _Socket, _Reason}, State) ->
-%%    ?PRINT("tcp tcp_error:~p~n", [[self(), erlang:get(?c_socket), _Socket, State, _Reason]]),
+%%    ?INFO("tcp tcp_error:~p~n", [[self(), erlang:get(?c_socket), _Socket, State, _Reason]]),
     {stop, normal, State};
 
 handle_info({inet_reply, _Sock, _Error}, State) ->
     if
         _Error =:= ok -> ok;
         true ->
-            ?PRINT("inet reply error: ~p~n", [_Error])
+            ?INFO("inet reply error: ~p~n", [_Error])
     end,
     {noreply, State};
 
@@ -106,7 +106,7 @@ handle_info(Info, State) ->
 
 %% 进程关闭(包括正常下线,非正常下线都会调用此函数)
 terminate(Reason, State) ->
-%%    ?PRINT("ws terminate:~p~n", [[self(), Reason, State]]),
+%%    ?INFO("ws terminate:~p~n", [[self(), Reason, State]]),
     ?process_call_mod:terminate(Reason, State).
 
 
@@ -118,7 +118,7 @@ code_change(_OldVsn, State, _Extra) ->
 handle_pack(Socket, Data, State) ->
     case Data of
         <<_Fin:1, _Rsv:3, 8:4, _Rest/binary>> -> %% 关闭连接
-%%            ?PRINT("clietn close connect"),
+%%            ?INFO("clietn close connect"),
             gen_tcp:send(Socket, <<1:1, 0:3, 8:4>>),
             {stop, normal, State};
         <<_Fin:1, _Rsv:3, 9:4, _Rest/binary>> -> %% ping,返回pong
@@ -131,7 +131,7 @@ handle_pack(Socket, Data, State) ->
         <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, Len:7, Rest/binary>> ->
             handle_pack(Socket, Len, Rest, State);
         _ ->
-%%            ?PRINT("tcp websocket RecvBin init error:~p~n", [[Data, State]]),
+%%            ?INFO("tcp websocket RecvBin init error:~p~n", [[Data, State]]),
 %%            {stop, normal, State}
             {noreply, State}
     end.
@@ -148,11 +148,11 @@ handle_pack(Socket, Len, Rest, State) ->
                             handle_pack(Socket, Next, State2)
                     end;
                 {stop, _Normal, State} ->
-%%                    ?PRINT("handle_info({tcp, Socket, Str}, State) return close"),
+%%                    ?INFO("handle_info({tcp, Socket, Str}, State) return close"),
                     {stop, normal, State}
             end;
         _ ->
-%%            ?PRINT("tcp websocket RecvBin error handle_pack/5:~p~n", [Rest]),
+%%            ?INFO("tcp websocket RecvBin error handle_pack/5:~p~n", [Rest]),
 %%            {stop, normal, State}
             {noreply, State}
     end.

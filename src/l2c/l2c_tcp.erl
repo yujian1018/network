@@ -28,7 +28,7 @@ init([_LSocet, Socket, _CallBack]) ->
     inet:setopts(Socket, [{active, once}]),
     
     {R1, R2, R3} = network_mod:init_random(),
-%%    ?PRINT("tcp init:~p~n", [{R1, R2, R3}]),
+%%    ?INFO("tcp init:~p~n", [{R1, R2, R3}]),
     network_mod:send(Socket, <<R1:32, R2:32, R3:32>>),
     ?put_new(?c_socket, Socket),
     ?process_call_mod:init({Socket}).
@@ -43,12 +43,12 @@ handle_cast(Msg, State) ->
 
 %% 恶意连接,发大数据,具体最大数据还要测试,暂定40000,(5000　* 8)
 handle_info({tcp, _Socket, RecvBin}, State) when bit_size(RecvBin) > 40000 ->
-    ?PRINT("tcp big data~n"),
+    ?INFO("tcp big data~n"),
     {stop, normal, State};
 
 %% 收到tcp数据,握手
 handle_info({tcp, Socket, RecvBin}, State) ->
-%%    ?PRINT("tcp handle_info:~p~n", [[self(), RecvBin, State]]),
+%%    ?INFO("tcp handle_info:~p~n", [[self(), RecvBin, State]]),
     Ret =
         case RecvBin of
             <<Validity:8, Bin/binary>> ->
@@ -63,33 +63,33 @@ handle_info({tcp, Socket, RecvBin}, State) ->
         end,
     
     inet:setopts(Socket, [{active, once}]),
-%%    ?PRINT("ws handle_info:~p~n", [[self(), RecvBin, Ret, State]]),
+%%    ?INFO("ws handle_info:~p~n", [[self(), RecvBin, Ret, State]]),
     Ret;
 
 %% 由于断线重连，socket关闭，不在执行下线操作
 handle_info({tcp_closed, _Socket}, State) ->
-%%    ?PRINT("tcp tcp_closed:~p~n", [[self(), erlang:get(?c_socket), Socket, State]]),
+%%    ?INFO("tcp tcp_closed:~p~n", [[self(), erlang:get(?c_socket), Socket, State]]),
     {noreply, State};
 
 handle_info({tcp_passive, _Socket}, State) ->
-%%    ?PRINT("tcp tcp_passive:~p~n", [[self(), erlang:get(?c_socket), Socket, State]]),
+%%    ?INFO("tcp tcp_passive:~p~n", [[self(), erlang:get(?c_socket), Socket, State]]),
     {noreply, State};
 
 handle_info({tcp_error, _Socket, _Reason}, State) ->
-%%    ?PRINT("tcp tcp_error:~p~n", [[self(), erlang:get(?c_socket), Socket, State, Reason]]),
+%%    ?INFO("tcp tcp_error:~p~n", [[self(), erlang:get(?c_socket), Socket, State, Reason]]),
     {noreply, State};
 
 handle_info({inet_reply, _Sock, _Error}, State) ->
     if
         _Error =:= ok -> ok;
         true ->
-            ?PRINT("inet reply error: ~p~n", [_Error])
+            ?INFO("inet reply error: ~p~n", [_Error])
     end,
     {noreply, State};
 
 %% 发数据包
 handle_info(stop, State) ->
-%%    ?PRINT("fight_server handle_info stop:~p~n", [State]),
+%%    ?INFO("fight_server handle_info stop:~p~n", [State]),
     {stop, normal, State};
 
 handle_info(Info, State) ->
@@ -98,7 +98,7 @@ handle_info(Info, State) ->
 
 %% 进程关闭(包括正常下线,非正常下线都会调用此函数)
 terminate(Reason, State) ->
-%%    ?PRINT("tcp terminate:~p~n", [[self(), Reason, State]]),
+%%    ?INFO("tcp terminate:~p~n", [[self(), Reason, State]]),
     ?process_call_mod:terminate(Reason, State).
 
 
