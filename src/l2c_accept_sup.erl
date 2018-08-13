@@ -18,7 +18,6 @@ init([Port, Opts, CallBack, Proto]) ->
         {ok, LSocket} ->
             Schedulers = erlang:system_info(schedulers_online),
             Child = [?CHILD(l2c_accept, I, worker, [LSocket, CallBack, Proto]) || I <- lists:seq(1, Schedulers)],
-            
             {ok, {{one_for_one, 1, 5}, Child}};
         _Other ->
             exit(["listen error~n", _Other])

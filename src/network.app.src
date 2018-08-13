@@ -1,11 +1,12 @@
 {application, network,
     [
-        {description, ""},
-        {vsn, "1"},
+        {description, "网络层（tcp(ws)、udp）"},
+        {vsn, "1.0.0"},
         {registered, []},
         {applications, [
             kernel,
-            stdlib
+            stdlib,
+            common
         ]},
         {mod, {network_app, []}},
         {env, []}

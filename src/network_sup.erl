@@ -15,8 +15,6 @@ start_link() ->
 
 init([]) ->
     Child = [
-        ?CHILD(l2c_tcp_sup, supervisor),
-        ?CHILD(l2c_ws_sup, supervisor)
     ],
     {ok, {{one_for_one, 5, 10}, Child}}.
 

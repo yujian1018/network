@@ -4,7 +4,47 @@
 %%% 1.维护连接状态。（tcp连接、管理、心跳）
 %%% 2.收发信息 （tcp收发信息）
 %%% 3.转发进程信息（进程接收到的消息，转发给玩家回調模块（同一个进程）做逻辑处理）
-%%%
+%%% ws协议规则：https://segmentfault.com/a/1190000005680323
+
+%%Frame format:
+%%​​
+%%      0                   1                   2                   3
+%%      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+%%     +-+-+-+-+-------+-+-------------+-------------------------------+
+%%     |F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+%%     |I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
+%%     |N|V|V|V|       |S|             |   (if payload len==126/127)   |
+%%     | |1|2|3|       |K|             |                               |
+%%     +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+%%     |     Extended payload length continued, if payload len == 127  |
+%%     + - - - - - - - - - - - - - - - +-------------------------------+
+%%     |                               |Masking-key, if MASK set to 1  |
+%%     +-------------------------------+-------------------------------+
+%%     | Masking-key (continued)       |          Payload Data         |
+%%     +-------------------------------- - - - - - - - - - - - - - - - +
+%%     :                     Payload Data continued ...                :
+%%     + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+%%     |                     Payload Data continued ...                |
+%%     +---------------------------------------------------------------+
+%% FIN	1bit	标明这一帧是否是整个消息体的最后一帧
+%% RSV1 RSV2 RSV3	1bit	保留位，必须为0，如果不为0，则标记为连接失败
+%% opcode	4bit	操作位，定义这一帧的类型
+
+%x0	标明这一个数据包是上一个数据包的延续，它是一个延长帧 (continuation frame)
+%x1	标明这个数据包是一个字符帧 (text frame)
+%x2	标明这个数据包是一个字节帧 (binary frame)
+%x3-7	保留值，供未来的非控制帧使用
+%x8	标明这个数据包是用来告诉对方，我方需要关闭连接
+%x9	标明这个数据包是一个心跳请求 (ping)
+%xA	标明这个数据包是一个心跳响应 (pong)
+%xB-F	保留至，供未来的控制帧使用
+
+%% Mask	1bit	标明承载的内容是否需要用掩码进行异或
+%% Masking-key	0 or 4bytes	掩码异或运算用的key
+%% Payload length	7bit or 7 +16bit or 7 + 64bit 承载体的长度
+%% 1.读取9-15位 (包括9和15位本身)，并转换为无符号整数。如果值小于或等于125，这个值就是长度；如果是 126，请转到步骤 2。如果它是 127，请转到步骤 3。
+%% 2.读取接下来的 16 位并转换为无符号整数，并作为长度。
+%% 3.读取接下来的 64 位并转换为无符号整数，并作为长度。
 %%% Created : 2012-9-24
 %%% -------------------------------------------------------------------
 
@@ -23,21 +63,24 @@ start_link([LSocet, Socket, CallBack]) ->
     gen_server:start_link(?MODULE, [LSocet, Socket, CallBack], []).
 
 
-init([_LSocet, Socket, _CallBack]) ->
+init([_LSocet, Socket, CallBack]) ->
     process_flag(trap_exit, true),
     inet:setopts(Socket, [{active, once}]),
-    
+
     ?put_new(?TCP_CONNECT_STATE, 0),
     ?put_new(?c_socket, Socket),
-    ?process_call_mod:init({Socket}).
+    ?put_new(?network_callback, CallBack),
+    CallBack:init({Socket}).
 
 
 handle_call(Msg, From, State) ->
-    ?process_call_mod:handle_call(Msg, From, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_call(Msg, From, State).
 
 
 handle_cast(Msg, State) ->
-    ?process_call_mod:handle_cast(Msg, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_cast(Msg, State).
 
 
 %% 恶意连接,发大数据,具体最大数据还要测试,暂定40000,(5000　* 8)
@@ -47,27 +90,17 @@ handle_info({tcp, _Socket, RecvBin}, State) when bit_size(RecvBin) > 40000 ->
 
 %% 收到tcp数据,握手
 handle_info({tcp, Socket, RecvBin}, State) ->
-%%    ?INFO("ws handle_info:~p~n", [[self(), Socket, RecvBin, State]]),
+    ?INFO("ws handle_info:~p~n", [[self(), Socket, RecvBin, State]]),
     CSocket = ?get(?c_socket),
     Ret =
         if
             CSocket =:= Socket ->
                 case ?get(?TCP_CONNECT_STATE) of
                     0 ->
-                        HeaderList = binary:split(RecvBin, <<"\r\n">>, [global]),
-                        HeaderList1 = [list_to_tuple(binary:split(I, <<": ">>)) || I <- HeaderList, I /= <<>>],
-                        SecWebSocketKey = proplists:get_value(<<"Sec-WebSocket-Key">>, HeaderList1, <<>>),
-                        IP = proplists:get_value(<<"X-Real-IP">>, HeaderList1, <<>>),
-                        Sha1 = crypto:hash(sha, [SecWebSocketKey, <<"258EAFA5-E914-47DA-95CA-C5AB0DC85B11">>]),
-                        Base64 = base64:encode(Sha1),
-                        Handshake = [<<"HTTP/1.1 101 Switching Protocols\r\n">>, <<"Upgrade: websocket\r\n">>, <<"Connection: Upgrade\r\n">>,
-                            <<"Sec-WebSocket-Accept: ">>, Base64, <<"\r\n">>, <<"\r\n">>],
-                        gen_tcp:send(Socket, Handshake),
-                        ?put_new(?c_ip, IP),
-                        network_mod:send(network_mod:init_ws()),
+                        ws_mod:header(Socket, RecvBin),
+                        ?tcp_send(ws_mod:sign()),
                         erlang:erase(?TCP_CONNECT_STATE),
                         {noreply, State};
-                    
                     ?undefined ->
                         handle_pack(Socket, RecvBin, State)
                 end;
@@ -101,13 +134,15 @@ handle_info({inet_reply, _Sock, _Error}, State) ->
     {noreply, State};
 
 handle_info(Info, State) ->
-    ?process_call_mod:handle_info(Info, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_info(Info, State).
 
 
 %% 进程关闭(包括正常下线,非正常下线都会调用此函数)
 terminate(Reason, State) ->
 %%    ?INFO("ws terminate:~p~n", [[self(), Reason, State]]),
-    ?process_call_mod:terminate(Reason, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:terminate(Reason, State).
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -115,26 +150,27 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %% 正式接受数据
-handle_pack(Socket, Data, State) ->
-    case Data of
-        <<_Fin:1, _Rsv:3, 8:4, _Rest/binary>> -> %% 关闭连接
-%%            ?INFO("clietn close connect"),
-            gen_tcp:send(Socket, <<1:1, 0:3, 8:4>>),
-            {stop, normal, State};
-        <<_Fin:1, _Rsv:3, 9:4, _Rest/binary>> -> %% ping,返回pong
-            gen_tcp:send(Socket, <<1:1, 0:3, 9:4>>),
-            {noreply, State};
-        <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 126:7, Len:16/unsigned-big-integer, Rest/binary>> ->
-            handle_pack(Socket, Len, Rest, State);
-        <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 127:7, Len:32/unsigned-big-integer, Rest/binary>> ->
-            handle_pack(Socket, Len, Rest, State);
-        <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, Len:7, Rest/binary>> ->
-            handle_pack(Socket, Len, Rest, State);
-        _ ->
-%%            ?INFO("tcp websocket RecvBin init error:~p~n", [[Data, State]]),
-%%            {stop, normal, State}
-            {noreply, State}
-    end.
+
+handle_pack(Socket, <<_Fin:1, _RSV:3, 8:4, _Rest/binary>>, State) ->
+    gen_tcp:send(Socket, <<1:1, 0:3, 8:4>>),
+    {stop, normal, State};
+
+handle_pack(Socket, <<_Fin:1, _RSV:3, 9:4, _Rest/binary>>, State) ->
+    gen_tcp:send(Socket, <<1:1, 0:3, 10:4>>),
+    {noreply, State};
+
+handle_pack(Socket,  <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 126:7, Len:16, Rest/binary>>, State) ->
+    handle_pack(Socket, Len, Rest, State);
+
+handle_pack(Socket,  <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 127:7, Len:64, Rest/binary>>, State) ->
+    handle_pack(Socket, Len, Rest, State);
+
+handle_pack(Socket,  <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, Len:7, Rest/binary>>, State) ->
+    handle_pack(Socket, Len, Rest, State);
+
+handle_pack(_Socket,  _Bin, State) ->
+    {noreply, State}.
+
 
 handle_pack(Socket, Len, Rest, State) ->
     case Rest of
@@ -158,9 +194,9 @@ handle_pack(Socket, Len, Rest, State) ->
     end.
 
 
-
 handle_str(Socket, Str, State) ->
-    ?process_call_mod:handle_info({tcp, Socket, Str}, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_info({tcp, Socket, Str}, State).
 
 
 unmask(Payload, Masking = <<MA:8, MB:8, MC:8, MD:8>>, Acc) ->
@@ -193,5 +229,5 @@ pack_encode(Bin, Opcode) ->
         Len when Len < 65535 ->
             <<1:1, 0:3, Opcode:4, 0:1, 126:7, Len:16/unsigned-big-integer, Bin/binary>>;
         Len ->
-            <<1:1, 0:3, Opcode:4, 0:1, 127:7, Len:32/unsigned-big-integer, Bin/binary>>
+            <<1:1, 0:3, Opcode:4, 0:1, 127:7, Len:64/unsigned-big-integer, Bin/binary>>
     end.

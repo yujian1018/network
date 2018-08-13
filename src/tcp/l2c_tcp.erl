@@ -23,23 +23,26 @@ start_link([LSocet, Socket, CallBack]) ->
     gen_server:start_link(?MODULE, [LSocet, Socket, CallBack], []).
 
 
-init([_LSocet, Socket, _CallBack]) ->
+init([_LSocet, Socket, CallBack]) ->
     process_flag(trap_exit, true),
     inet:setopts(Socket, [{active, once}]),
     
-    {R1, R2, R3} = network_mod:init_random(),
+    {R1, R2, R3} = tcp_mod:sign(),
 %%    ?INFO("tcp init:~p~n", [{R1, R2, R3}]),
-    network_mod:send(Socket, <<R1:32, R2:32, R3:32>>),
+    tcp_mod:send(Socket, <<R1:32, R2:32, R3:32>>),
     ?put_new(?c_socket, Socket),
-    ?process_call_mod:init({Socket}).
+    ?put_new(?network_callback, CallBack),
+    CallBack:init({Socket}).
 
 
 handle_call(Msg, From, State) ->
-    ?process_call_mod:handle_call(Msg, From, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_call(Msg, From, State).
 
 
 handle_cast(Msg, State) ->
-    ?process_call_mod:handle_cast(Msg, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_cast(Msg, State).
 
 %% 恶意连接,发大数据,具体最大数据还要测试,暂定40000,(5000　* 8)
 handle_info({tcp, _Socket, RecvBin}, State) when bit_size(RecvBin) > 40000 ->
@@ -52,9 +55,10 @@ handle_info({tcp, Socket, RecvBin}, State) ->
     Ret =
         case RecvBin of
             <<Validity:8, Bin/binary>> ->
-                case catch network_mod:tcp_sign(Validity) of
+                case catch tcp_mod:sign(Validity) of
                     ok ->
-                        ?process_call_mod:handle_info({tcp, Socket, Bin}, State);
+                        CallBack = erlang:get(?network_callback),
+                        CallBack:handle_info({tcp, Socket, Bin}, State);
                     _Check ->
                         {stop, normal, State}
                 end;
@@ -93,13 +97,15 @@ handle_info(stop, State) ->
     {stop, normal, State};
 
 handle_info(Info, State) ->
-    ?process_call_mod:handle_info(Info, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:handle_info(Info, State).
 
 
 %% 进程关闭(包括正常下线,非正常下线都会调用此函数)
 terminate(Reason, State) ->
 %%    ?INFO("tcp terminate:~p~n", [[self(), Reason, State]]),
-    ?process_call_mod:terminate(Reason, State).
+    CallBack = erlang:get(?network_callback),
+    CallBack:terminate(Reason, State).
 
 
 code_change(_OldVsn, State, _Extra) ->
