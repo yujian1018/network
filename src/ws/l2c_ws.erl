@@ -54,7 +54,7 @@
 
 -behaviour(gen_server).
 
--export([pack_encode/1, pack_encode/2]).
+-export([encode/1, encode/2]).
 
 -export([start_link/1, init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -85,12 +85,12 @@ handle_cast(Msg, State) ->
 
 %% 恶意连接,发大数据,具体最大数据还要测试,暂定40000,(5000　* 8)
 handle_info({tcp, _Socket, RecvBin}, State) when bit_size(RecvBin) > 40000 ->
-    ?INFO("tcp big data~n"),
+%%    ?INFO("tcp big data~n"),
     {stop, {tcp, max_bit}, State};
 
 %% 收到tcp数据,握手
 handle_info({tcp, Socket, RecvBin}, State) ->
-    ?INFO("ws handle_info:~p~n", [[self(), Socket, RecvBin, State]]),
+%%    ?INFO("ws handle_info:~p~n", [[self(), Socket, RecvBin, State]]),
     CSocket = ?get(?c_socket),
     Ret =
         if
@@ -98,7 +98,7 @@ handle_info({tcp, Socket, RecvBin}, State) ->
                 case ?get(?TCP_CONNECT_STATE) of
                     0 ->
                         ws_mod:header(Socket, RecvBin),
-                        ?tcp_send(ws_mod:sign()),
+                        ?ws_send(ws_mod:sign()),
                         erlang:erase(?TCP_CONNECT_STATE),
                         {noreply, State};
                     ?undefined ->
@@ -159,16 +159,16 @@ handle_pack(Socket, <<_Fin:1, _RSV:3, 9:4, _Rest/binary>>, State) ->
     gen_tcp:send(Socket, <<1:1, 0:3, 10:4>>),
     {noreply, State};
 
-handle_pack(Socket,  <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 126:7, Len:16, Rest/binary>>, State) ->
+handle_pack(Socket, <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 126:7, Len:16, Rest/binary>>, State) ->
     handle_pack(Socket, Len, Rest, State);
 
-handle_pack(Socket,  <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 127:7, Len:64, Rest/binary>>, State) ->
+handle_pack(Socket, <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, 127:7, Len:64, Rest/binary>>, State) ->
     handle_pack(Socket, Len, Rest, State);
 
-handle_pack(Socket,  <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, Len:7, Rest/binary>>, State) ->
+handle_pack(Socket, <<_Fin:1, _Rsv:3, _Opcode:4, _Mask:1, Len:7, Rest/binary>>, State) ->
     handle_pack(Socket, Len, Rest, State);
 
-handle_pack(_Socket,  _Bin, State) ->
+handle_pack(_Socket, _Bin, State) ->
     {noreply, State}.
 
 
@@ -218,10 +218,10 @@ unmask(Payload, Masking = <<MA:8, MB:8, MC:8, MD:8>>, Acc) ->
     end.
 
 
-pack_encode(Bin) ->
-    pack_encode(Bin, 1).
+encode(Bin) ->
+    encode(Bin, 1).
 
-pack_encode(Bin, Opcode) ->
+encode(Bin, Opcode) ->
     Len = size(Bin),
     case Len of
         Len when Len < 126 ->

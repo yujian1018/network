@@ -18,3 +18,4 @@
 -define(TCP_CONNECT_STATE, tcp_connect_state).
 
 -define(tcp_send(Data), tcp_mod:send(Data)).
+-define(ws_send(Data), ws_mod:send(Data)).

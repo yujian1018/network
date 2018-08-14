@@ -10,8 +10,8 @@
 
 -export([
     sign/0, sign/1,
-    encode/1,
-    header/2
+    header/2,
+    send/1, send/2
 ]).
 
 
@@ -38,23 +38,6 @@ ws_uniform() ->
     B1 + B2 + B3.
 
 
-% 打包json数据
-encode(Bin) ->
-    encode(Bin, 1).
-
-% 打包二进制数据
-encode(Bin, Opcode) ->
-    Len = size(Bin),
-    case Len of
-        Len when Len < 126 ->
-            <<1:1, 0:3, Opcode:4, 0:1, Len:7, Bin/binary>>;
-        Len when Len < 65535 ->
-            <<1:1, 0:3, Opcode:4, 0:1, 126:7, Len:16/unsigned-big-integer, Bin/binary>>;
-        Len ->
-            <<1:1, 0:3, Opcode:4, 0:1, 127:7, Len:32/unsigned-big-integer, Bin/binary>>
-    end.
-
-
 %%258EAFA5-E914-47DA-95CA-C5AB0DC85B11（它是一个“ 魔术字符串”）
 header(Socket, RecvBin) ->
     HeaderList = binary:split(RecvBin, <<"\r\n">>, [global]),
@@ -70,3 +53,20 @@ header(Socket, RecvBin) ->
         <<"Sec-WebSocket-Accept: ">>, Base64, <<"\r\n">>, <<"\r\n">>],
     gen_tcp:send(Socket, Handshake),
     ?put_new(?c_ip, IP).
+
+
+send(Port, Pack) ->
+%%    ?DEBUG("debug:~p~n", [[self(), Pack]]),
+    if
+        Pack =:= <<>> -> ok;
+        Pack =:= [] -> ok;
+        is_binary(Pack) ->
+            erlang:port_command(Port, l2c_ws:encode(Pack), [force]);
+        true ->
+            erlang:port_command(Port, l2c_ws:encode(?encode(Pack)), [force])
+    end.
+
+send(Pack) ->
+%%    ?DEBUG("debug:~p~n", [[self(), Pack]]),
+    Port = erlang:get(?c_socket),
+    send(Port, Pack).

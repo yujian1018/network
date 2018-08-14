@@ -22,20 +22,13 @@ send(Port, Pack) ->
         is_binary(Pack) ->
             erlang:port_command(Port, Pack, [force]);
         true ->
-            erlang:port_command(Port, ws_mod:encode(?encode(Pack)), [force])
+            erlang:port_command(Port, ?encode(Pack), [force])
     end.
 
 send(Pack) ->
 %%    ?DEBUG("debug:~p~n", [[self(), Pack]]),
     Port = erlang:get(?c_socket),
-    if
-        Pack =:= <<>> -> ok;
-        Pack =:= [] -> ok;
-        is_binary(Pack) ->
-            erlang:port_command(Port, Pack, [force]);
-        true ->
-            erlang:port_command(Port, ws_mod:encode(?encode(Pack)), [force])
-    end.
+    send(Port, Pack).
 
 sign() ->
     {MegaSecs, Secs, MicroSecs} = os:timestamp(),
