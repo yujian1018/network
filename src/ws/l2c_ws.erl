@@ -150,11 +150,13 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %% 正式接受数据
-
+%x8	标明这个数据包是用来告诉对方，我方需要关闭连接
 handle_pack(Socket, <<_Fin:1, _RSV:3, 8:4, _Rest/binary>>, State) ->
     gen_tcp:send(Socket, <<1:1, 0:3, 8:4>>),
     {stop, normal, State};
 
+%x9	标明这个数据包是一个心跳请求 (ping)
+%xA	标明这个数据包是一个心跳响应 (pong)
 handle_pack(Socket, <<_Fin:1, _RSV:3, 9:4, _Rest/binary>>, State) ->
     gen_tcp:send(Socket, <<1:1, 0:3, 10:4>>),
     {noreply, State};
